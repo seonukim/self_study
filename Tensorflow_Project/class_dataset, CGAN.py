@@ -35,7 +35,7 @@ class Dataset(object):
         self.data = data[index]
 
         if len(labels) > 0:
-            # Store mixed labels separately.
+            # Save mixed labels separately.
             self.labels = labels[index]
             # List unique category values
             self.classes = np.unique(labels)
