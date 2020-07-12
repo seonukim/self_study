@@ -76,7 +76,7 @@ class Dataset(object):
 
             if len(self.labels) > 0:
                 y_batch = np.array([self.one_hot[k] for k in \
-                                    self.labels[current_index:current_index = batch_size]])
+                                    self.labels[current_index:current_index + batch_size]])
             else:
                 y_batch = np.array([])
             current_index += batch_size
