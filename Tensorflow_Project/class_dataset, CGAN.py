@@ -110,8 +110,7 @@ class CGAN(object):
         version = tf.__version__
         print(f'Tensorflow Version : {version}')
 
-        assert LooseVersion(version) >= LooseVersion('1.2'),
-               ('You are using %s, please use TensorFlow version 1.2 or newer.' % version)
+        assert LooseVersion(version) >= LooseVersion('1.2'), ('You are using %s, please use TensorFlow version 1.2 or newer.' % version)
 
         # Ensure GPU is present.
         if not tf.test.gpu_device_name():
