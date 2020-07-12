@@ -27,7 +27,7 @@ class Dataset(object):
             self.cmap = 'gray'
 
         # If the image is different in size, resize it.
-        if data.shape[1] != self.IMAGE_HEIGHT of data.shape[2] != self.IMAGE_WITH:
+        if data.shape[1] != self.IMAGE_HEIGHT or data.shape[2] != self.IMAGE_WITH:
             data = self.image_resize(data, self.IMAGE_HEIGHT, self.IMAGE_WITH)
         # Store mixed data separately.
         index = list(range(len(data)))
