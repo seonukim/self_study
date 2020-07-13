@@ -313,5 +313,182 @@ class CGAN(object):
         sample = self.dataset.data[index]
         # Draw a sample
         self.plotting_images_grid(n_images, sample)
-
     
+    def optimization(self):
+        # GAN Optimization Procedure
+        # initialize input, placeholder of parameter
+        cases, image_width, image_height, out_channel_dim = self.dataset.shape
+        input_real, input_z, labels, learn_rate = \
+            self.instantiate_inputs(image_width, image_height,
+                                    out_channel_dim, self.z_dim,
+                                    len(self.dataset.classes))
+
+        # Define network and calculate loss
+        d_loss, g_loss = self.loss(input_real, input_z, labels, out_channel_dim)
+
+        # Enumerate trainable_variables, Divide into G and D parts
+        d_vars = [v for v in tf.compat.v1.trainable_variables() \
+                    if v.name.startswith('discriminator')]
+        g_vars = [v for v in tf.compat.v1.trainable_variables() \
+                    if v.name.startswith('generator')]
+        self.g_vars = g_vars
+
+        # First optimize the classifier, then optimize the generator.
+        with tf.compat.v1.control_dependencies(
+            tf.compat.v1.get_collection(
+                tf.compat.v1.GraphKeys.UPDATE_OPS)):
+                d_train_opt = tf.compat.v1.train.AdamOptimizer(
+                    self.learning_rate, self.beta1).minimize(d_loss, var_list = d_vars)
+                g_train_opt = tf.compat.v1.train.AdamOptimizer(
+                    self.learning_rate, self.beta1).minimize(g_loss, var_list = g_vars)
+                return input_real, input_z, labels, learn_rate, d_loss, g_loss, d_train_opt, g_train_opt
+
+    # Step of train
+    def train(self, save_every_n = 1000):
+        losses = []
+        step = 0
+        epoch_count = self.epochs
+        batch_size = self.batch_size
+        z_dim = self.z_dim
+        learning_rate = self.learning_rate
+        get_batches = self.dataset.get_baches
+        classes = len(self.dataset.classes)
+        data_image_mode = self.dataset.image_mode
+
+        cases, image_width, image_height, out_channel_dim = self.dataset.shape
+        input_real, input_z, labels, learn_rate, d_loss, g_loss, d_train_opt, g_train_opt = \
+            self.optimization()
+        
+        # Save the trained GAN
+        saver = tf.compat.v1.train.Saver(var_list = self.g_vars)
+
+        # Prepare the mask for plotting procedure
+        rows, cols = min(5, classes), 5
+        target = np.array([self.dataset.one_hot[i] \
+                    for j in range(cols) for i in range(rows)])
+        with tf.compat.v1.Session() as sess:
+            sess.run(tf.compat.v1.global_variables_initializer())
+            for epoch_i in range(epoch_count):
+                for batch_images, batch_labels in get_batches(batch_size):
+                    # Count the step
+                    step += 1
+                    # Define Z
+                    batch_z = np.random.uniform(-1, 1, size = (len(batch_images), z_dim))
+                    batch_z = np.concatenate((batch_z, batch_labels), axis = 1)
+                    # Adjust shape of label for generator
+                    batch_labels = batch_labels.reshape(batch_size, 1, 1, classes)
+                    batch_labels = batch_labels * np.ones((batch_size, image_width, image_height, classes))
+                    # Sampling random noise for G
+                    batch_images = batch_images * 2
+                    # Run the optimized model
+                    _ = sess.run(d_train_opt, feed_dict = {input_real: batch_images, input_z: batch_z, \
+                                                            labels: batch_labels, learn_rate: learning_rate})
+                    _ = sess.run(g_train_opt, feed_dict = {input_z: batch_z, input_real: batch_images, \
+                                                            labels: batch_labels, learn_rate: learning_rate})
+                    # Report the fitted results and generator output to the intersection
+                    if step % (save_every_n / 10) == 0:
+                        train_loss_d = sess.run(d_loss, {input_z: batch_z,
+                                                         input_real: batch_images,
+                                                         labels: batch_labels})
+                        train_loss_g = g_loss.eval({input_z: batch_z, labels: batch_labels})
+                        print("Epoch %i/%i step %i..." % (epoch_i + 1, epoch_count, step),
+                              "Discriminator Loss: %0.3f..." % train_loss_d,
+                              "Generator Loss: %0.3f" % train_loss_g)
+                    if step % save_every_n == 0:
+                        rows = min(5, classes)
+                        cols = 5
+                        target = np.array([self.dataset.one_hot[i] for j in range(cols) \
+                                            for i in range(rows)])
+                        self.show_generator_output(sess, rows * cols, input_z, target,
+                                                   out_channel_dim, data_image_mode)
+                        saver.save(sess, './' + self.generator_name + '/generator.ckpt')
+                    
+                # Calculate and output losses at the end of each generation
+                try:
+                    train_loss_d = sess.run(d_loss, {input_z: batch_z,
+                                                     input_real: batch_images,
+                                                     labels: batch_labels})
+                    train_loss_g = g_loss.eval({input_z: batch_z, labels: batch_labels})
+                    print("Epoch %i/%i step %i..." % (epoch_i + 1, epoch_count, step),
+                          "Discriminator Loss: %0.3f..." % train_loss_d,
+                          "Generator Loss: %0.3f" % train_loss_g)
+                except:
+                    train_loss_d, train_loss_g = -1, -1
+                
+                # Save loss values to be reported after the training is over
+                losses.append([train_loss_d, train_loss_g])
+            
+            # Result of final generator
+            self.show_generator_output(sess, rows * cols, input_z, target, out_channel_dim, data_image_mode)
+            saver.save(sess, './' + self.generator_name + '/generator.ckpt')
+        
+        return np.array(losses)
+
+    def generator_new(self, target_class = -1, rows = 5, cols = 5, plot = True):
+        # Generating a new sample
+        # Fixing minimum rows and cols values
+        rows, cols = max(1, rows), max(1, cols)
+        n_images = rows * cols
+        # Checking if we already have a Tensorflow graph
+        if not self.trained:
+            # Complete restoration of tensorflow graphs
+            tr.reset_default_graph()
+            self._session = tf.compat.v1.Session()
+            self._classes = len(self.dataset.classes)
+            self._input_z = tf.compat.v1.placeholder(tf.float32, shape = (None, self.z_dim + \
+                                                     self._classes), name = 'input_z')
+            out_channel_dim = self.dataset.shape[3]
+            # Restoring the generator graph
+            self._generator = self.generator(self._input_z, out_channel_dim)
+            g_vars = [v for v in tf.trainable_variables() if v.name.startswith('generator')]
+            saver = tf.train.Saver(var_list=g_vars)
+            print('Restoring generator graph')
+            saver.restore(self._session, tf.train.latest_checkpoint(self.generator_name))
+            # Setting trained flag as True
+            self.trained = True
+        
+        # Continuing the session
+        sess = self._session
+        # Building an array of examples examples
+        target = np.zeros((n_images, self._classes))
+        for j in range(cols):
+            for i in range(rows):
+                if target_class == -1:
+                    target[j * cols + i, j] = 1.0
+                else:
+                    target[j * cols + i] = self.dataset.one_hot[target_class].tolist()
+        # Generating the random input
+        z_dim = self._input_z.get_shape().as_list()[-1]
+        example_z = np.random.uniform(-1, 1, size=[n_images, z_dim - target.shape[1]])
+        example_z = np.concatenate((example_z, target), axis=1)
+        # Generating the images
+        sample = sess.run(
+            self._generator,
+            feed_dict={self._input_z: example_z})
+        # Plotting
+        if plot:
+            if rows * cols==1:
+                if sample.shape[3] <= 1:
+                    images_grid = sample[0,:,:,0]
+                else:
+                    images_grid = sample[0]
+            else:
+                images_grid = self.images_grid(sample, cols)
+            plt.imshow(images_grid, cmap=self.cmap)
+            plt.show()
+        # Returning the sample for later usage (and not closing the session)
+        return sample
+    
+    def fit(self, learning_rate = 0.0002, beta1 = 0.35):
+        # Fit procedure, starting training and result storage
+        # Setting training parameters
+        self.learning_rate = learning_rate
+        self.beta1 = beta1
+        # Training generator and discriminator
+        with tf.compat.v1.Graph().as_default():
+            train_loss = self.train()
+        # Plotting training fitting
+        plt.plot(train_loss[:, 0], label = 'Discriminator')
+        plt.plot(train_loss[:, 1], label = 'Generator')
+        plt.title('Training fitting')
+        plt.legend()
