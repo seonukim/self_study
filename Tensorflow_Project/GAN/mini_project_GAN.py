@@ -9,8 +9,8 @@ import tensorflow as tf
 from glob import glob
 from tqdm import tqdm
 from CGan import CGan, Dataset
-path = 'C:/Users/bitcamp/Desktop/서누/GAN/'
-os.chdir(path)
+# path = 'C:/Users/bitcamp/Desktop/서누/GAN/'
+# os.chdir(path)
 
 class TqdmUpTo(tqdm):
     def update_to(self, b = 1, bsize = 1, tsize = None):
